@@ -1,0 +1,15 @@
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    # No ignore rules — em6809-core has only two real deps
+    # (`once_cell`, `libc`) and we want minor/major bumps to surface
+    # promptly so the API surface stays current.
