@@ -1,0 +1,23 @@
+[package]
+name = "em6809-core"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.70"
+license = "MIT OR Apache-2.0"
+description = "Headless MC6809 emulator core: CPU, bus, MMU (MC6829), I/O devices, disassembler, debugger, boot-script runtime."
+repository = "https://github.com/hha0x617/em6809-core"
+homepage = "https://github.com/hha0x617/em6809-core"
+keywords = ["emulator", "mc6809", "6809", "cpu", "embedded"]
+categories = ["emulators", "no-std::no-alloc"]
+readme = "README.md"
+
+[lib]
+name = "em6809_core"
+path = "src/lib.rs"
+
+[dependencies]
+once_cell = "1"
+libc = "0.2"
+
+[lints.rust]
+unexpected_cfgs = "allow"
