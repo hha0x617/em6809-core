@@ -3,6 +3,15 @@
 [![Build and Test](https://github.com/hha0x617/em6809-core/actions/workflows/ci.yml/badge.svg)](https://github.com/hha0x617/em6809-core/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](LICENSE-APACHE)
 
+*This crate was extracted from [em6809](https://github.com/hha0x617/em6809)
+— see [`docs/extract_em6809_core_plan.md`](https://github.com/hha0x617/em6809/blob/main/docs/extract_em6809_core_plan.md)
+in that repository for the rationale.  The bulk of the source dates
+back to em6809's pre-extraction history, where it was generated with
+the assistance of AI coding tools as part of a vibe coding workflow:
+through em6809 commit `d85c2eb` with **Codex CLI**, then **Claude Code**
+from `aa1759e` onward.  Subsequent changes in this repository continue
+under the same workflow with Claude Code.*
+
 Headless emulator core for the **Motorola MC6809**: CPU, bus, MMU
 (MC6829), I/O devices (MC6850 console, block storage, GPIO, timer),
 disassembler, debugger primitives (breakpoints, shadow call stack,
@@ -83,7 +92,20 @@ fn run_image(srec: &str) {
 
 See the integration tests in `tests/` for fuller examples
 (`cpu_basic.rs`, `console_iobus.rs`, `breakpoints_call_stack.rs`,
-`os9_priority.rs`, `swi_push_order.rs`, etc.).
+`page2_index_ops.rs`, `swi_push_order.rs`, etc.).
+
+## Documentation
+
+In-tree docs (under `docs/`):
+
+| Topic                       | English (canonical)                | 日本語                            |
+|-----------------------------|------------------------------------|-----------------------------------|
+| MC6809 instruction coverage | `docs/en/instruction_status.md`    | `docs/ja/instruction_status.md`   |
+| OS‑9 device map templates   | `docs/en/os9_device_map_templates.md` | `docs/ja/os9_device_map_templates.md` |
+
+The full index lives in [`docs/README.md`](docs/README.md), which
+also points at the related em6809 docs (extraction plan, GUI stack
+notes, OS-9 boot guide, config-vs-boot-script interaction).
 
 ## Building
 
