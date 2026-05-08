@@ -1,0 +1,50 @@
+name: Feature request
+description: Suggest an instruction implementation, a peripheral, or a public API addition for em6809-core
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        em6809-core is the **headless** emulator core.  GUI / debugger
+        UI / settings UI requests should go to the
+        [em6809](https://github.com/hha0x617/em6809) repo instead.
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Scope
+      options:
+        - CPU core (ISA, addressing modes, cycles)
+        - MMU (MC6829) / memory model
+        - Peripherals / I/O devices
+        - Boot-script DSL (`bootscript` module)
+        - Public API surface (what consumers can `pub use`)
+        - Build / CI
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Motivation — what problem does this solve?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional context / references (datasheets, prior art)

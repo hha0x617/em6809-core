@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/hha0x617/em6809-core/security/advisories/new
+    about: Please report security issues privately via Private Vulnerability Reporting (see SECURITY.md).
+  - name: GUI app issue
+    url: https://github.com/hha0x617/em6809/issues/new/choose
+    about: Bugs in the standalone em6809 GUI app (register viewer, settings, console window) belong on the em6809 repo, not here.
+  - name: emfe plugin issue
+    url: https://github.com/hha0x617/emfe_plugins/issues/new/choose
+    about: Bugs in the emfe MC6809 plugin DLL belong on the emfe_plugins repo.
