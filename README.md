@@ -35,13 +35,33 @@ vte / rfd.  Notable embedders today:
   stack, console window).  Re-exports this crate's modules for
   source-level compatibility.
 * **[emfe_plugins](https://github.com/hha0x617/emfe_plugins)** —
-  the MC6809 plugin for emfe (Windows-focused emulator framework)
-  pulls this crate as a submodule.
+  the MC6809 plugin for emfe (Windows-focused emulator framework).
 
 The bulk of the design and history lives in the em6809 repo.  See
 [`docs/extract_em6809_core_plan.md`](https://github.com/hha0x617/em6809/blob/main/docs/extract_em6809_core_plan.md)
 in em6809 for the extraction rationale, module split rationale,
 and migration plan.
+
+## Availability — internal-use crate, not on crates.io
+
+> **`em6809-core` is currently an internal-use crate.**  It is **not
+> published on crates.io**, so `cargo add em6809-core` does not work.
+> The two known embedders ([em6809](https://github.com/hha0x617/em6809)
+> and the [emfe_plugins](https://github.com/hha0x617/emfe_plugins)
+> `mc6809` plugin) both depend on this repository directly via Cargo's
+> `git`-with-pinned-rev syntax:
+>
+> ```toml
+> em6809-core = { git = "https://github.com/hha0x617/em6809-core", rev = "<commit-sha>" }
+> ```
+>
+> Bumps happen in lockstep across the two consumers so that the
+> standalone GUI and the plugin DLL run identical CPU-core code.
+>
+> The intent is to publish `em6809-core` on crates.io and switch both
+> consumers to a normal `version = "..."` pin once the public API
+> stabilises — until then, treat this crate as an implementation detail
+> shared between the two repositories above.
 
 ## Crate layout
 
