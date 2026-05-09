@@ -1,3 +1,79 @@
+//! # `io` — peripherals and the device-aware bus
+//!
+//! Wraps a plain [`crate::bus::Bus`] (or [`crate::mmu::Mc6829`]-backed
+//! bus) with a list of memory-mapped devices, so reads and writes to
+//! the right address ranges go to a peripheral rather than to RAM.
+//! This is what em6809 / emfe_plugin_mc6809 use as the actual CPU bus.
+//!
+//! ## Provided types
+//!
+//! - [`Device`] — the trait every peripheral implements.  Required:
+//!   `contains(addr)`, `read8(addr)`, `write8(addr, data)`, plus the
+//!   downcast helper `as_any_mut()`.  Optional: `irq_lines()` returns
+//!   `(irq, firq, nmi)` lines so the bus can OR them with anything
+//!   else asserting an interrupt.
+//! - [`Mc6850Dev`] — Motorola **MC6850 ACIA**-compatible UART
+//!   (`+0` SR/CR, `+1` RDR/TDR).  This is the console used by Hha
+//!   Forth, Hha Lisp, and the NetBSD MVME147 boot ROM.  Helpers
+//!   include `feed_bytes(...)` (host -> guest input), output-tee
+//!   modes (`set_out_file`, `set_tee_stderr`, `set_flush_*`), and
+//!   IRQ/FIRQ wiring (`set_irq_hold_cycles`, `set_firq`).
+//! - [`BlockDev`] — block-storage device (sector-addressable disk).
+//!   Backed by a host file (`set_backing_file`) or in-memory image
+//!   (`set_image`).  Expose `last_cmd()`, `last_data()`, `status()`,
+//!   `take_dirty()` for testability and dirty-region tracking.
+//! - [`GpioDev`] — generic memory-mapped GPIO with configurable
+//!   width.  `get_state() -> (out_mask, dir_mask, value)` is what
+//!   the GUI's GPIO panel reads back.
+//! - [`IoBus<B>`] — a [`Bus`] that owns an inner bus `B` plus a
+//!   `Vec<Box<dyn Device>>`.  Reads/writes inside any device's
+//!   `contains()` go to that device; everything else falls through
+//!   to `inner`.  `irq_lines()` ORs across all devices.  Convenience:
+//!   - `IoBus::new(inner)` / `add_device(dev)`.
+//!   - `ensure_console(enable, base)` / `ensure_block(...)` /
+//!     `ensure_gpio(...)` / `ensure_timer(...)` — install or remove
+//!     the standard peripherals from a config flag.
+//!   - `with_console_mut(...)` / `with_block_mut(...)` / etc. —
+//!     run a closure with mutable access to the device, returning
+//!     `false` if the device isn't present.
+//!   - `feed_console_input(bytes)` — shorthand for the common case.
+//!
+//! ## GUI bridge: free functions
+//!
+//! The console feeds the em6809 GUI through global one-cell state
+//! so the device doesn't need a back-channel pointer.  These are not
+//! used by the headless integration tests:
+//!
+//! - [`set_console_log`] / [`set_block_log`] / [`set_gpio_log`] —
+//!   per-device trace toggles (the GUI's *Logging* settings).
+//! - [`set_console_gui_enabled`] / [`set_console_gui_active`] /
+//!   [`set_console_stdout_enabled`] — output routing.
+//! - [`take_console_gui_bytes`] / [`console_gui_pending_len`] — the
+//!   GUI drains transmitted bytes from this side.
+//! - [`set_console_repaint_callback`] — wake the GUI when bytes
+//!   arrive.
+//! - [`publish_gpio_broadcast`] / [`take_gpio_broadcast`] /
+//!   [`peek_gpio_broadcast`] — GUI <-> device GPIO state mirror.
+//!
+//! ## Typical usage
+//!
+//! ```no_run
+//! use em6809_core::bus::Memory;
+//! use em6809_core::cpu::Cpu;
+//! use em6809_core::io::IoBus;
+//!
+//! // Plain Memory + console at $FF00 + a small block disk at $FF10.
+//! let mut bus = IoBus::new(Memory::new());
+//! bus.ensure_console(true, 0xFF00);
+//! bus.ensure_block(true, 0xFF10);
+//!
+//! let mut cpu = Cpu::new();
+//! cpu.reset(&mut bus);
+//! for _ in 0..1_000 {
+//!     cpu.step(&mut bus, /* trace = */ false);
+//! }
+//! ```
+
 use crate::bus::Bus;
 use once_cell::sync::OnceCell;
 use std::any::Any;
