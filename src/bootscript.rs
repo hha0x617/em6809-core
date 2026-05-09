@@ -1,3 +1,82 @@
+//! # `bootscript` — trigger-driven boot-script DSL
+//!
+//! A small DSL for "do X when Y happens" during emulation.  Used by
+//! em6809's `--boot-script` CLI option to set up MMU mappings,
+//! console / block / timer device state, and CPU interrupt-mask state
+//! at specific PCs or step counts during the boot sequence.
+//! Reusable by any embedder that wants the same DSL.
+//!
+//! ## Syntax
+//!
+//! Each line is `<trigger>: <action>`.  Triggers:
+//!
+//! - `at_pc <addr>` — fire when `cpu.r.pc == addr`.
+//! - `at_step <N>` — fire when the global instruction count reaches
+//!   `N`.
+//!
+//! Actions cover the common boot-time configuration knobs — see
+//! [`Action`] for the full enum.  Comments start with `#` or `//`;
+//! blank lines are ignored.
+//!
+//! ## Provided types
+//!
+//! - [`Action`] — what the trigger does.  Variants include `Mode`,
+//!   `Prot`, `Map(page, frame)`, `Attr(page, attr)`, `ConCtrl`,
+//!   `ConRxWm`, `ConIrqHold`, `ConFirq`, `IrqMask`, `FirqMask`,
+//!   `BlkIrq`, `BlkFirq`, `BlkIrqHold`.
+//! - [`Trigger`] — `OnPc(addr, Action)` or `OnStep(n, Action)`.
+//! - [`BootSequencer`] — owns a `Vec<Trigger>` and a "next step
+//!   counter".  Constructed with `BootSequencer::new(triggers)`.
+//!   The CPU loop calls `seq.on_pre_step(&mut bus, regs_base, pc,
+//!   &mut cpu)` and `seq.on_post_step(&mut bus, regs_base)` to fire
+//!   matching `OnPc` / `OnStep` triggers in order.  Triggers fire at
+//!   most once.  Diagnostic getters
+//!   [`BootSequencer::console_missing_count`],
+//!   [`BootSequencer::block_missing_count`],
+//!   [`BootSequencer::mmu_missing_count`] count silent no-ops when an
+//!   action targeted a device the bus doesn't have.
+//!
+//! ## Provided functions
+//!
+//! - [`parse_boot_script`] — parse a multi-line script into
+//!   `Vec<Trigger>`.  Returns `Err(line N: ...)` on parse failure so
+//!   embedders can surface the offending line to the user.
+//! - [`emit_boot_template`] — return a sample boot script for a
+//!   named scenario (`netbsd_mvme147` and other presets).  Useful
+//!   for `--boot-script-template <name>` generators.
+//!
+//! ## Typical usage
+//!
+//! ```no_run
+//! use em6809_core::bus::Memory;
+//! use em6809_core::cpu::Cpu;
+//! use em6809_core::io::IoBus;
+//! use em6809_core::mmu::Mc6829;
+//! use em6809_core::bootscript::{BootSequencer, parse_boot_script};
+//!
+//! let script = "
+//!     at_pc $0100: mode sys
+//!     at_pc $0100: map 0=0
+//!     at_step 1000: con_ctrl 0x55
+//! ";
+//! let triggers = parse_boot_script(script).expect("valid script");
+//! let mut seq = BootSequencer::new(triggers);
+//!
+//! let mut bus = IoBus::new(Memory::new());
+//! let mut cpu = Cpu::new();
+//! cpu.reset(&mut bus);
+//! let regs_base = 0xFFE0;
+//! loop {
+//!     seq.on_pre_step(&mut bus, regs_base, cpu.r.pc, &mut cpu);
+//!     cpu.step(&mut bus, false);
+//!     seq.on_post_step(&mut bus, regs_base);
+//! }
+//! ```
+//!
+//! See em6809's `docs/en/config_and_boot_script.md` for the full
+//! script grammar and known footguns (config-vs-script ordering,
+//! silent no-op when target devices are absent, MMU base validation).
+
 use crate::bus::Bus;
 use crate::io::IoBus;
 // ConsoleDev referenced via IoBus helper; no direct use here

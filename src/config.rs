@@ -1,3 +1,54 @@
+//! # `config` — MMU configuration DSL
+//!
+//! A small text-based configuration language for programming
+//! [`crate::mmu::Mc6829`] state up front.  Used by the em6809 GUI's
+//! `--mmu-config <file>` flag and by integration tests that want to
+//! set up a non-trivial MMU without manually poking each register.
+//!
+//! ## Syntax
+//!
+//! Whitespace-separated tokens; one statement per line.  `#` and
+//! `//` start line comments.  Numbers accept hex (`0x..` / `$..`) or
+//! decimal.
+//!
+//! | Statement | Effect |
+//! |---|---|
+//! | `task N` | Switch the active task to `N` (0..7). |
+//! | `mode sys` / `mode user` | Switch CPU mode bit. |
+//! | `map P=F` | Map logical page `P` to physical frame `F`. |
+//! | `attr P=B` | Set attribute byte for logical page `P` (bit0 WPROT, bit1 RPROT, bit2 NX). |
+//! | `prot N` | Write protection-control byte. |
+//! | `regs <addr>` / `regs off` | Move or disable the register window. |
+//!
+//! ## Provided functions
+//!
+//! - [`apply_mmu_config_from_str`] — parse a multi-line config and
+//!   apply it to an `&mut Mc6829`.  Returns `Err(line N: ...)` on any
+//!   parse error so the caller can surface the location to the user.
+//! - [`apply_preset`] — apply a named built-in preset (`identity`,
+//!   `netbsd_mvme147`, etc.).  Useful when you don't want to author a
+//!   config file just to get a known-good starting point.
+//! - [`list_presets`] — `&'static [&'static str]` of every preset
+//!   name.  Drives the GUI's preset dropdown.
+//!
+//! ## Typical usage
+//!
+//! ```no_run
+//! use em6809_core::mmu::Mc6829;
+//! use em6809_core::config::{apply_mmu_config_from_str, apply_preset};
+//!
+//! let mut mmu = Mc6829::new(0x10000, 0xFFE0);
+//! apply_preset(&mut mmu, "identity").unwrap();
+//!
+//! let cfg = "
+//!     task 0
+//!     map 0x0=0x0000  // logical $0xxx → physical frame 0
+//!     map 0x1=0x0001
+//!     attr 0xF=0x01   // WPROT on $Fxxx
+//! ";
+//! apply_mmu_config_from_str(&mut mmu, cfg).unwrap();
+//! ```
+
 use crate::bus::Bus;
 use crate::mmu::Mc6829;
 
