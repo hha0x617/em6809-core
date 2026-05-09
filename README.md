@@ -82,6 +82,135 @@ The integration tests in `tests/` mirror the modules above; they
 build only against this crate (no GUI feature gates) and act as
 the public API regression net.
 
+## Module overview
+
+Each module's `cargo doc` page (its top-of-file `//!` block) is the
+canonical reference; the entries below are README-friendly summaries.
+Modules covered so far: `bus`, `cpu`, `loader`, `disasm`.  The other
+modules will gain the same treatment in follow-up PRs.
+
+### `bus` — address-bus abstraction
+
+Defines the `Bus` trait that the CPU reaches the world through, and
+ships two ready-made implementations.  Embedders that need a
+peripheral-aware bus build on top of these (see `io::IoBus` in the
+`io` module).
+
+- `trait Bus { fn read8(&mut self, u16) -> u8; fn write8(...); ... }`
+  — extension points include `read8_fetch` (execute-permission split
+  from data reads) and `irq_lines() -> (irq, firq, nmi)`.
+- `Memory` — flat 64 KiB `[u8; 0x10000]`.  Helpers: `clear(value)`,
+  `load_slice(base, &[u8])`, `read_slice(start, len) -> &[u8]`.
+- `WriteTrack` — wraps any `Box<dyn Bus>` and records every write
+  inside an optional address span.  Used by em6809 to re-disassemble
+  self-modifying code regions.  Helpers: `set_span(...)`,
+  `take_dirty_addrs() -> Vec<u16>`, `inner_any_mut()`.
+
+```rust
+use em6809_core::bus::{Bus, Memory};
+
+let mut bus = Memory::new();
+bus.load_slice(0x0100, &[0x12, 0x12, 0x39]); // NOP NOP RTS
+assert_eq!(bus.read8(0x0102), 0x39);
+```
+
+### `cpu` — MC6809 CPU and registers
+
+The module embedders touch most often.  Owns CPU state and the
+per-instruction step routine.
+
+- `Registers` — `a`, `b`, `x`, `y`, `u`, `s`, `pc`, `dp`, `cc`.
+  `Copy + Clone + Default`, snapshottable by value.
+- `Cpu` — `cpu.r: Registers`, `cpu.cycles: u64`, embedded
+  `debug::ShadowCallStack`, plus `nmi_pending` / `firq_pending` /
+  `irq_pending` latches.  Methods:
+  - `Cpu::new()` — fresh, all-zero CPU.
+  - `Cpu::reset(&mut bus)` — load PC from reset vector at `$FFFE/F`.
+  - `Cpu::set_pc(u16)` — start anywhere (used by the `--pc` CLI flag).
+  - `Cpu::step(&mut bus, trace) -> u32` — one instruction; returns
+    cycles consumed.
+  - `Cpu::step_over(...)` / `Cpu::step_out(...)` — debugger
+    primitives, return a `StepStop` reason.
+  - `Cpu::request_nmi()` / `request_firq()` / `request_irq()` —
+    latch a pending interrupt; serviced on the next `step()`.
+- `enum StepStop` — `ReturnTarget`, `Breakpoint(BreakpointId)`,
+  `Limit`, `NotACall`, `EmptyStack`.
+- Free functions: `set_irq_log(bool)` (global IRQ trace toggle),
+  `regs_snapshot(&Cpu) -> Registers` (UI-friendly clone).
+
+```rust
+use em6809_core::bus::Memory;
+use em6809_core::cpu::Cpu;
+
+let mut bus = Memory::new();
+let mut cpu = Cpu::new();
+cpu.reset(&mut bus);              // PC <- vector at $FFFE/F
+let cycles = cpu.step(&mut bus, /* trace = */ false);
+println!("first instruction took {cycles} cycles");
+```
+
+### `loader` — image parsers and bus loaders
+
+Reads program images and either returns a structured parse result
+or writes them straight into a bus / memory.
+
+- `enum ImageFormat { Binary, Srec }` — pairs with the GUI's
+  `--format` flag.
+- `struct ParsedImage { blocks: Vec<(u16, Vec<u8>)>, loaded_ranges,
+  entry: Option<u16> }` — full parse result.
+- `struct LoadedImage { loaded_ranges, entry: Option<u16> }` —
+  post-load summary, no byte payload.
+- `parse_binary(base, &[u8]) -> ParsedImage` — single-block wrap.
+- `parse_srec(&str) -> Result<ParsedImage, String>` — Motorola
+  S-Record parser; accepts S0/S1/S2/S3/S7/S8/S9 records.
+- `load_binary(...)` / `load_binary_bus(...)` / `load_srec(...)` /
+  `load_srec_bus(...)` — `parse_*` then write into a `Memory` or any
+  `Bus`.
+
+```rust
+use em6809_core::bus::Memory;
+use em6809_core::loader::load_srec;
+
+let srec = std::fs::read_to_string("hello.s19").unwrap();
+let mut mem = Memory::new();
+let img = load_srec(&mut mem, &srec).expect("valid S-Record");
+if let Some(entry) = img.entry {
+    println!("entry point: ${:04X}", entry);
+}
+```
+
+For loaders that need to honour peripheral writes (so writes to ACIA
+/ GPIO / etc. don't get clobbered), use the `_bus` variants on top of
+`io::IoBus`.
+
+### `disasm` — single-instruction and window disassembler
+
+Reads bytes from any `Bus` and turns them into mnemonic text.  The
+em6809 GUI uses this to render the listing pane; integration tests
+use it as the canonical "this PC decoded as that instruction"
+verification.
+
+- `disasm_one(bus, pc) -> (u16, String)` — `(byte_length, "MNEMONIC
+  OPERAND")`.  Advance `pc` by `byte_length` for the next
+  instruction.
+- `disasm_one_hex(bus, pc) -> (u16, String)` — same, but the string
+  is prefixed with raw bytes (`"$1F $89 ..."`) for hex-dump views.
+- `disasm_window(bus, pc, before, after) -> Vec<DisasmLine>` — band
+  of instructions around `pc`, anchored on a known instruction
+  boundary.  Robust against landing mid-instruction (common when
+  scrolling).
+- `type DisasmLine = (u16, String)` — `(address, mnemonic_text)`.
+
+```rust
+use em6809_core::bus::Memory;
+use em6809_core::disasm::disasm_one;
+
+let mut bus = Memory::new();
+bus.load_slice(0x0100, &[0x12]);  // NOP
+let (len, text) = disasm_one(&mut bus, 0x0100);
+assert_eq!((len, text.as_str()), (1, "NOP"));
+```
+
 ## Usage
 
 Add the crate as a git dependency until we publish to crates.io:

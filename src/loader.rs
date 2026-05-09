@@ -1,3 +1,52 @@
+//! # `loader` — image parsers and bus loaders
+//!
+//! Reads program images in two formats and writes them into a
+//! [`crate::bus::Bus`] (or directly into a [`crate::bus::Memory`]).
+//! The `parse_*` functions return the structured [`ParsedImage`]
+//! without touching memory; the `load_*` functions parse and write
+//! in one step, returning a smaller [`LoadedImage`] descriptor.
+//!
+//! ## Provided types
+//!
+//! - [`ImageFormat`] — `Binary` or `Srec`.  Used by the GUI's
+//!   `--format` CLI flag.
+//! - [`ParsedImage`] — the full parse result: `blocks: Vec<(u16,
+//!   Vec<u8>)>` of `(base, bytes)` pairs, the contiguous
+//!   `loaded_ranges`, and an optional `entry` address (S-Record S9/S8
+//!   start records).
+//! - [`LoadedImage`] — the post-load summary: just the loaded address
+//!   ranges and the entry point.  Convenient for "what did I just
+//!   put into memory" reports without keeping the byte payload.
+//!
+//! ## Free functions
+//!
+//! - [`parse_binary`] — wrap a raw byte slice as a single-block
+//!   [`ParsedImage`].
+//! - [`parse_srec`] — Motorola S-Record parser.  Accepts S0/S1/S2/S3
+//!   data records and S7/S8/S9 start records; returns `Err` with a
+//!   descriptive message on malformed input.
+//! - [`load_binary`] / [`load_binary_bus`] — `parse_binary` then write
+//!   to memory or any `Bus`.
+//! - [`load_srec`] / [`load_srec_bus`] — same, for S-Record input.
+//!
+//! ## Typical usage
+//!
+//! ```no_run
+//! use em6809_core::bus::Memory;
+//! use em6809_core::loader::load_srec;
+//!
+//! let srec = std::fs::read_to_string("hello.s19").unwrap();
+//! let mut mem = Memory::new();
+//! let img = load_srec(&mut mem, &srec).expect("valid S-Record");
+//! if let Some(entry) = img.entry {
+//!     println!("entry point: ${:04X}", entry);
+//! }
+//! ```
+//!
+//! For loaders that write through a peripheral-aware bus (so writes
+//! to ACIA / GPIO / etc. are *not* clobbered by the load), use the
+//! `_bus` variants with [`crate::io::IoBus`].
+
 use crate::bus::Bus;
 use crate::bus::Memory;
 
