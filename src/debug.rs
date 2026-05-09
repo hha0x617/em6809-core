@@ -1,3 +1,85 @@
+//! # `debug` — debugger primitives
+//!
+//! Everything the GUI's debugger surface needs that isn't on the CPU
+//! itself: breakpoints (with conditional expression evaluator),
+//! shadow call stack, instruction-boundary tracking, and a small set
+//! of memory/register dump helpers.
+//!
+//! The [`crate::cpu::Cpu`] embeds a [`ShadowCallStack`] and consults
+//! a [`BreakpointSet`] every step, so embedders typically just
+//! configure these structures and let the CPU do the bookkeeping.
+//!
+//! ## Provided types
+//!
+//! ### Breakpoints
+//!
+//! - [`BreakpointId`] — opaque newtype around `u32`.  Returned by
+//!   [`BreakpointSet::add`] and used to identify breakpoints in
+//!   subsequent calls.
+//! - [`Breakpoint`] — `pub address: u16`, `pub enabled: bool`,
+//!   `pub condition: Option<String>`, `pub hit_count: u64`,
+//!   `pub ignore_count: u64`.  The `condition` is a tiny C-style
+//!   expression language (see the docstring on [`BreakpointSet`])
+//!   with `==`, `!=`, `<`, `<=`, `>`, `>=`, `&&`, `||`, `!`, `+`,
+//!   `-`, `*`, `&`, `|`, `^`, parentheses, hex (`0x..` / `$..`),
+//!   decimal, register names (`a`/`b`/`d`/`x`/`y`/`u`/`s`/`pc`/
+//!   `dp`/`cc`).
+//! - [`BreakpointSet`] — owns the `Vec<Breakpoint>`.  Methods:
+//!   - `add(addr) -> BreakpointId` / `remove(id)` /
+//!     `set_enabled(id, bool)` / `set_condition(id, Option<String>)`.
+//!   - `should_break(pc)` — fast pre-step check the CPU calls
+//!     before evaluating conditions (skips over hit-count, etc.).
+//!   - `check(pc, &Registers)` — full check including condition
+//!     evaluation; called when `should_break` says yes.
+//!   - `iter()` / `len()` for UI rendering.
+//!
+//! ### Shadow call stack
+//!
+//! - [`CallKind`] — what pushed this frame (`Bsr` / `Lbsr` / `Jsr`
+//!   / `Swi` / `Irq` / `Firq` / `Nmi`).
+//! - [`CallFrame`] — `pub return_addr: u16`, `pub kind: CallKind`,
+//!   plus a few register snapshots for UI display.
+//! - [`ShadowCallStack`] — append-only `Vec<CallFrame>` updated by
+//!   the CPU's call/return paths.  `frames()`, `top()`, `depth()` for
+//!   read access; the CPU pushes/pops directly.
+//!
+//! ### Instruction boundaries
+//!
+//! - [`InstructionBoundaries`] — set of address ranges known to start
+//!   instruction boundaries.  Lets the GUI's listing pane scroll
+//!   without landing in the middle of a multi-byte op.
+//! - [`linear_sweep`] — populate an `InstructionBoundaries` from a
+//!   linear walk of an address range.
+//!
+//! ## Free dump helpers
+//!
+//! - [`dump_registers`] — print `&Cpu` to stdout (CLI/test usage).
+//! - [`dump_memory`] / [`dump_memory_bus`] / [`dump_memory_ascii`] —
+//!   hex / hex+ASCII memory dumps for a `&Memory` or any `&mut Bus`.
+//!
+//! ## Typical usage
+//!
+//! ```no_run
+//! use em6809_core::bus::Memory;
+//! use em6809_core::cpu::Cpu;
+//! use em6809_core::debug::BreakpointSet;
+//!
+//! let mut bus = Memory::new();
+//! let mut cpu = Cpu::new();
+//! let mut bps = BreakpointSet::default();
+//! let id = bps.add(0x1234);
+//! bps.set_condition(id, Some("a == 0x42 && pc < $2000".into()));
+//!
+//! cpu.reset(&mut bus);
+//! loop {
+//!     if let Some(hit) = bps.check(cpu.r.pc, &cpu.r) {
+//!         println!("stopped on bp {:?}", hit);
+//!         break;
+//!     }
+//!     cpu.step(&mut bus, false);
+//! }
+//! ```
+
 #![allow(clippy::uninlined_format_args)]
 use std::collections::BTreeSet;
 
@@ -888,7 +970,7 @@ impl BreakpointSet {
         hit
     }
 
-    /// Same as [`should_break`] but evaluates `Breakpoint::condition`
+    /// Same as [`BreakpointSet::should_break`] but evaluates `Breakpoint::condition`
     /// against the supplied register snapshot. A BP without a
     /// condition (or with an empty / whitespace-only condition string)
     /// always passes the condition check and behaves like

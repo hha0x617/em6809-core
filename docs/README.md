@@ -8,11 +8,18 @@ translations under `ja/` aiming for content parity.
 
 | Topic                                | English (canonical)             | 日本語 (companion)             |
 | ------------------------------------ | ------------------------------- | ------------------------------ |
+| Module overview                      | `en/module_overview.md`         | `ja/module_overview.md`        |
 | MC6809 instruction coverage          | `en/instruction_status.md`      | `ja/instruction_status.md`     |
 | OS‑9 device map templates            | `en/os9_device_map_templates.md`| `ja/os9_device_map_templates.md` |
 
 ### One-line summaries
 
+- **Module overview** — GitHub-readable mirror of every module's
+  `//!` rustdoc.  Walks through the public API surface
+  (types / traits / functions / constants) for each of the 10
+  modules and shows a runnable usage snippet per module.  Read this
+  if you want orientation without cloning the repo to run
+  `cargo doc --open`.
 - **Instruction coverage** — current MC6809 opcode coverage (the
   standard ISA is 100% implemented), disassembly conventions, flag
   semantics, and how to verify behaviour against the trace samples.
