@@ -86,8 +86,9 @@ the public API regression net.
 
 Each module's `cargo doc` page (its top-of-file `//!` block) is the
 canonical reference; the entries below are README-friendly summaries.
-Modules covered so far: `bus`, `cpu`, `loader`, `disasm`.  The other
-modules will gain the same treatment in follow-up PRs.
+Modules covered so far: `bus`, `cpu`, `loader`, `disasm`, `io`,
+`mmu`, `timer`.  Remaining: `debug`, `config`, `bootscript` —
+follow-up PR.
 
 ### `bus` — address-bus abstraction
 
@@ -210,6 +211,131 @@ bus.load_slice(0x0100, &[0x12]);  // NOP
 let (len, text) = disasm_one(&mut bus, 0x0100);
 assert_eq!((len, text.as_str()), (1, "NOP"));
 ```
+
+### `io` — peripherals and the device-aware bus
+
+Wraps a plain `Bus` (or MMU-backed bus) with a list of memory-mapped
+devices, so reads/writes to peripheral address ranges are handled by
+the device rather than RAM.  This is the actual CPU bus that
+em6809 / emfe_plugin_mc6809 hand to the CPU.
+
+- `trait Device` — every peripheral implements `contains(addr)`,
+  `read8/write8`, plus optional `irq_lines() -> (irq, firq, nmi)`.
+- `Mc6850Dev` — Motorola **MC6850 ACIA**-compatible UART (`+0` SR/CR,
+  `+1` RDR/TDR).  Helpers: `feed_bytes(&[u8])`, output tee
+  (`set_out_file`, `set_tee_stderr`, `set_flush_*`, `set_local_echo`),
+  IRQ/FIRQ wiring (`set_irq_hold_cycles`, `set_firq`).  Used by Hha
+  Forth, Hha Lisp, the NetBSD MVME147 boot ROM.
+- `BlockDev` — sector-addressable disk backed by a host file
+  (`set_backing_file`) or in-memory image (`set_image`).  Exposes
+  `last_cmd()`, `last_data()`, `status()`, `take_dirty()`.
+- `GpioDev` — generic memory-mapped GPIO (`get_state() -> (out, dir,
+  value)`).
+- `IoBus<B>` — the device-aware bus itself.  Holds `inner: B` plus a
+  `Vec<Box<dyn Device>>`.
+  - `IoBus::new(inner)` / `add_device(dev)`.
+  - `ensure_console` / `ensure_block` / `ensure_gpio` / `ensure_timer`
+    — install or remove the standard peripherals from a config flag.
+  - `with_console_mut` / `with_block_mut` / `with_gpio_mut` /
+    `with_timer_mut` — run a closure with mutable access to the
+    device.
+  - `feed_console_input(bytes)` — shorthand for the common case.
+- Free functions wire the device to the GUI: `set_console_log`,
+  `set_console_gui_*`, `take_console_gui_bytes`,
+  `set_console_repaint_callback`, `publish_gpio_broadcast`,
+  `take_gpio_broadcast`, `peek_gpio_broadcast`.
+
+```rust
+use em6809_core::bus::Memory;
+use em6809_core::cpu::Cpu;
+use em6809_core::io::IoBus;
+
+// Plain Memory + console at $FF00 + a small block disk at $FF10.
+let mut bus = IoBus::new(Memory::new());
+bus.ensure_console(true, 0xFF00);
+bus.ensure_block(true, 0xFF10);
+
+let mut cpu = Cpu::new();
+cpu.reset(&mut bus);
+for _ in 0..1_000 {
+    cpu.step(&mut bus, /* trace = */ false);
+}
+```
+
+### `mmu` — MC6829 paging MMU
+
+The Motorola **MC6829** paging MMU.  Used by NetBSD on the MVME147
+platform.  16 logical pages × 4 KiB = 64 KiB CPU address space, with
+each page mappable to a 16-bit physical frame; up to 8 task contexts;
+per-page write/read/execute attributes; configurable register window.
+
+- `Mc6829` — implements `Bus` so it plugs in anywhere a bus is
+  expected.  Methods:
+  - `Mc6829::new(phys_bytes, regs_base)` — fresh MMU.  `regs_base` is
+    the logical address of the configuration window.
+  - `identity_map_current()` — bypass: logical N → physical N for the
+    current task.  Default boot state until the OS programs the map.
+  - `set_task(t: u8)`, `set_map_entry(page, frame)` — directly poke
+    the active task's map.
+  - `snapshot_current_map()`, `snapshot_map_for(sys_mode)`,
+    `snapshot_maps()` — read the active map (or both user/system
+    maps) for UI/debugger display.
+  - `store_logical_slice(base, &[u8])` /
+    `store_physical_slice(pbase, &[u8])` /
+    `clear_physical(value)` — load image data at logical or physical
+    addresses.
+  - `set_log_maps(bool)` — verbose translation logging.
+
+Configuration via DSL (`task N`, `map page=frame`, `attr ...`,
+`prot ...`) lives in `config`.  Boot-time programming via triggers
+(`OnPc`, `OnStep`) lives in `bootscript`.
+
+```rust
+use em6809_core::cpu::Cpu;
+use em6809_core::mmu::Mc6829;
+
+// 64 KiB physical, register window at $FFE0 (logical).
+let mut mmu = Mc6829::new(0x10000, 0xFFE0);
+mmu.identity_map_current();
+mmu.store_logical_slice(0x0100, &[0x12, 0x12, 0x39]); // NOP NOP RTS
+
+let mut cpu = Cpu::new();
+cpu.set_pc(0x0100);
+cpu.step(&mut mmu, /* trace = */ false);
+```
+
+### `timer` — minimal periodic timer device
+
+A small memory-mapped countdown timer that drives periodic interrupts.
+Implements `Device`, so plugs into `IoBus`.
+
+- Register layout: `+0` CTRL/STATUS (`RUN`, `IRQ_EN`, `FIRQ`, `PENDING`),
+  `+1..+2` `RELOAD` (16-bit period in instruction ticks), `+3..+4`
+  `COUNTER`.
+- `TimerDev` — methods:
+  - `TimerDev::new(base)` — fresh, stopped.
+  - `set_reload(u16)` / `start()` / `stop()` — programmatic control
+    without going through register writes (testing).
+  - `set_irq_enable(bool)` / `set_firq(bool)` — IRQ/FIRQ wiring
+    without touching CTRL.
+  - `get_state() -> (run, irq_en, firq, pending)` — UI snapshot.
+  - `get_info() -> (reload, counter)` — UI snapshot.
+
+```rust
+use em6809_core::bus::Memory;
+use em6809_core::io::IoBus;
+use em6809_core::timer::TimerDev;
+
+let mut bus = IoBus::new(Memory::new());
+let mut t = TimerDev::new(0xFF20);
+t.set_reload(10_000);
+t.set_irq_enable(true);
+t.start();
+bus.add_device(t);
+```
+
+Or, simpler, let `IoBus::ensure_timer` handle install/teardown from a
+config flag.
 
 ## Usage
 

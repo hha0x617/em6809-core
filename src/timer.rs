@@ -1,3 +1,54 @@
+//! # `timer` — minimal periodic timer device
+//!
+//! A small memory-mapped countdown timer that the GUI and integration
+//! tests use to drive periodic interrupts.  It implements
+//! [`crate::io::Device`] so it plugs straight into [`crate::io::IoBus`].
+//!
+//! ## Register layout
+//!
+//! Five bytes starting at `base`:
+//!
+//! | Offset | Direction | Field |
+//! |---:|---|---|
+//! | `+0` | R/W | CTRL/STATUS — bit0 `RUN`, bit1 `IRQ_EN`, bit2 `FIRQ` (route as FIRQ instead of IRQ), bit3 `PENDING` (R), bit4 write-1-to-clear `PENDING` |
+//! | `+1..+2` | R/W | `RELOAD` — 16-bit period in instruction ticks |
+//! | `+3..+4` | R/W | `COUNTER` — current down-counter |
+//!
+//! When `RUN=1` and `IRQ_EN=1`, the device asserts an IRQ (or FIRQ if
+//! bit 2 is set) every `RELOAD` ticks.  The handler clears `PENDING`
+//! by writing 1 to bit 4.
+//!
+//! ## Provided type
+//!
+//! - [`TimerDev`] — the device itself.  Methods:
+//!   - [`TimerDev::new`] (`base`) — fresh, stopped.
+//!   - [`TimerDev::set_reload`] / [`TimerDev::start`] / [`TimerDev::stop`]
+//!     — programmatic control without going through register writes
+//!     (useful for integration tests).
+//!   - [`TimerDev::set_irq_enable`] / [`TimerDev::set_firq`] — IRQ/FIRQ
+//!     wiring without touching CTRL.
+//!   - [`TimerDev::get_state`] -> `(run, irq_en, firq, pending)` —
+//!     UI snapshot.
+//!   - [`TimerDev::get_info`] -> `(reload, counter)` — UI snapshot.
+//!
+//! ## Typical usage
+//!
+//! ```no_run
+//! use em6809_core::bus::Memory;
+//! use em6809_core::io::IoBus;
+//! use em6809_core::timer::TimerDev;
+//!
+//! let mut bus = IoBus::new(Memory::new());
+//! let mut t = TimerDev::new(0xFF20);
+//! t.set_reload(10_000);
+//! t.set_irq_enable(true);
+//! t.start();
+//! bus.add_device(t);
+//! ```
+//!
+//! Or, simpler, let `IoBus::ensure_timer` handle install/teardown
+//! from a config flag.
+
 use crate::io::Device;
 use std::any::Any;
 

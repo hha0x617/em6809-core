@@ -1,3 +1,54 @@
+//! # `mmu` — MC6829 paging MMU
+//!
+//! Implements the **Motorola MC6829** paging memory management unit.
+//! Used by NetBSD on the MVME147 platform.  16 logical pages × 4 KiB
+//! = the standard 64 KiB CPU address space, with each page mappable
+//! to a 16-bit physical frame; up to 8 separate task contexts; per-page
+//! attribute bits (write-protect / read-protect / no-execute); and a
+//! configurable register window.
+//!
+//! ## Provided types
+//!
+//! - [`Mc6829`] — the MMU itself.  `Mc6829: Bus`, so plug it in
+//!   anywhere a [`crate::bus::Bus`] is expected and it will translate
+//!   logical reads/writes to physical accesses.  Key methods:
+//!   - [`Mc6829::new`] (`phys_bytes`, `regs_base`) — fresh MMU.
+//!     `regs_base` is the logical address of the configuration window
+//!     (task select, map entries, attributes, fault status).
+//!   - [`Mc6829::identity_map_current`] — bypass mode: logical N maps
+//!     to physical N for the current task (the default boot state on
+//!     real hardware until the OS programs the map).
+//!   - [`Mc6829::set_task`] / [`Mc6829::set_map_entry`] — directly
+//!     poke the active task's map.
+//!   - [`Mc6829::snapshot_current_map`] / [`Mc6829::snapshot_map_for`]
+//!     / [`Mc6829::snapshot_maps`] — read the active map (or both
+//!     user/system maps) for UI/debugger display.
+//!   - [`Mc6829::store_logical_slice`] / [`Mc6829::store_physical_slice`]
+//!     / [`Mc6829::clear_physical`] — load image data into MMU memory
+//!     at logical or physical addresses.  Used by the loader and by
+//!     boot scripts.
+//!   - [`Mc6829::set_log_maps`] — enable verbose translation logging.
+//!
+//! Configuration via DSL (`task N`, `map page=frame`, `attr ...`,
+//! `prot ...`) is in [`crate::config`].  Boot-time programming via
+//! triggers (`OnPc`, `OnStep`) is in [`crate::bootscript`].
+//!
+//! ## Typical usage
+//!
+//! ```no_run
+//! use em6809_core::cpu::Cpu;
+//! use em6809_core::mmu::Mc6829;
+//!
+//! // 64 KiB physical, register window at $FFE0 (logical).
+//! let mut mmu = Mc6829::new(0x10000, 0xFFE0);
+//! mmu.identity_map_current();
+//! mmu.store_logical_slice(0x0100, &[0x12, 0x12, 0x39]); // NOP NOP RTS
+//!
+//! let mut cpu = Cpu::new();
+//! cpu.set_pc(0x0100);
+//! cpu.step(&mut mmu, /* trace = */ false);
+//! ```
+
 #![allow(clippy::needless_range_loop)]
 use crate::bus::Bus;
 
