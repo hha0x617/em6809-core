@@ -1,3 +1,62 @@
+//! # `cpu` — MC6809 CPU and registers
+//!
+//! Owns the CPU state and the per-instruction step routine.  This is
+//! the module embedders touch most often: instantiate a [`Cpu`], hand
+//! it a [`crate::bus::Bus`], and drive `step()` in a loop.
+//!
+//! ## Provided types
+//!
+//! - [`Registers`] — the eight architectural registers (`a`, `b`, `x`,
+//!   `y`, `u`, `s`, `pc`, `dp`) plus the `cc` condition-code byte.
+//!   `Copy + Clone + Default` so it can be snapshotted cheaply.
+//! - [`Cpu`] — wraps `Registers` (`r`), a cycle counter (`cycles`),
+//!   the [`crate::debug::ShadowCallStack`], and pending interrupt
+//!   latches (`nmi_pending` / `firq_pending` / `irq_pending`).  Key
+//!   methods:
+//!   - [`Cpu::new`] — fresh CPU, all-zero state.
+//!   - [`Cpu::reset`] — fetches the reset vector at `$FFFE/F` and
+//!     loads it into PC, mirroring real-hardware reset semantics.
+//!   - [`Cpu::set_pc`] — start anywhere (the GUI uses this for the
+//!     `--pc` flag).
+//!   - [`Cpu::step`] — execute exactly one instruction; returns the
+//!     cycle count consumed.
+//!   - [`Cpu::step_over`] / [`Cpu::step_out`] — debugger primitives
+//!     that step past a CALL or out of the current frame using the
+//!     shadow call stack.  Both return a [`StepStop`] reason.
+//!   - [`Cpu::request_nmi`] / [`Cpu::request_firq`] /
+//!     [`Cpu::request_irq`] — latch a pending interrupt; serviced on
+//!     the next `step()`.
+//!   - [`Cpu::check_breakpoint`] — convenience wrapper around the
+//!     embedded [`crate::debug::BreakpointSet`].
+//! - [`StepStop`] — what stopped a `step_over` / `step_out` call:
+//!   `ReturnTarget`, `Breakpoint(id)`, `Limit`, `NotACall`,
+//!   `EmptyStack`.
+//!
+//! ## Free functions
+//!
+//! - [`set_irq_log`] — flip a global flag that turns IRQ trace
+//!   output on/off (the GUI uses this for the *Trace IRQs* setting).
+//! - [`regs_snapshot`] — clone a `&Cpu`'s `Registers` for UI/debugger
+//!   display without mutably borrowing the CPU.
+//!
+//! ## Typical usage
+//!
+//! ```no_run
+//! use em6809_core::bus::Memory;
+//! use em6809_core::cpu::Cpu;
+//!
+//! let mut bus = Memory::new();
+//! let mut cpu = Cpu::new();
+//! cpu.reset(&mut bus);   // PC <- vector at $FFFE/F
+//! for _ in 0..1_000 {
+//!     cpu.step(&mut bus, /* trace = */ false);
+//! }
+//! ```
+//!
+//! For interactive debugging (breakpoints, step-over, step-out),
+//! pair the CPU with [`crate::debug::BreakpointSet`] and
+//! [`crate::debug::ShadowCallStack`].
+
 #![allow(clippy::uninlined_format_args)]
 use crate::bus::Bus;
 use crate::debug::{BreakpointSet, CallFrame, CallKind, ShadowCallStack};

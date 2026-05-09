@@ -1,3 +1,38 @@
+//! # `bus` — address-bus abstraction
+//!
+//! Everything that the [`crate::cpu::Cpu`] reaches through goes via the
+//! [`Bus`] trait.  The crate ships two implementations and exposes the
+//! trait so embedders can plug in their own (memory-mapped MMU, paging
+//! MMU, multi-bank RAM, etc.).
+//!
+//! ## Provided types
+//!
+//! - [`Bus`] — the core trait: `read8`, `write8`, optional `irq_lines()`,
+//!   plus a separate `read8_fetch` for execute-permission checks (defaults
+//!   to plain `read8`).  All bus impls are `Send` so the CPU can move
+//!   between threads with the bus.
+//! - [`Memory`] — a flat 64 KiB byte array.  The simplest possible bus,
+//!   useful for unit tests and small standalone programs that don't need
+//!   peripherals.  Helpers: `clear(value)`, `load_slice(base, bytes)`,
+//!   `read_slice(start, len)`.
+//! - [`WriteTrack`] — a wrapper bus that records every write address
+//!   inside an optional address span.  The em6809 GUI uses this to
+//!   re-disassemble code regions when self-modifying programs touch them.
+//!   Helpers: `set_span(...)`, `take_dirty_addrs()`, `inner_any_mut()`.
+//!
+//! ## Typical usage
+//!
+//! ```no_run
+//! use em6809_core::bus::{Bus, Memory};
+//!
+//! let mut bus = Memory::new();
+//! bus.write8(0x0100, 0x12);
+//! assert_eq!(bus.read8(0x0100), 0x12);
+//! ```
+//!
+//! For peripheral support, wrap the byte memory with
+//! [`crate::io::IoBus`] and add devices on top.
+
 use std::any::Any;
 
 pub trait Bus: Send {

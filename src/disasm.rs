@@ -1,3 +1,42 @@
+//! # `disasm` — single-instruction and window disassembler
+//!
+//! Reads one or more bytes from a [`crate::bus::Bus`] and turns them
+//! into human-readable mnemonic text.  Used by the em6809 GUI to
+//! render the listing pane and by the integration tests in `tests/`
+//! as the canonical way to verify "this PC decoded as that
+//! instruction".
+//!
+//! ## Provided functions and types
+//!
+//! - [`disasm_one`] → `(length, "MNEMONIC OPERAND")`.  The `length`
+//!   is the number of bytes the instruction occupies, so the caller
+//!   can advance `pc` by it to reach the next instruction.
+//! - [`disasm_one_hex`] — same, but the returned string is prefixed
+//!   with the raw bytes (`"$1F $89 ..."`) for hex dump views.
+//! - [`disasm_window`] — disassembles a band of instructions around
+//!   `pc` and returns a `Vec<DisasmLine>`.  Anchors on a known
+//!   instruction boundary near `pc`, walks forward, and is robust
+//!   against landing in the middle of a multi-byte instruction
+//!   (common when scrolling a listing pane).
+//! - [`DisasmLine`] = `(u16, String)` — `(address, mnemonic_text)`.
+//!
+//! ## Typical usage
+//!
+//! ```no_run
+//! use em6809_core::bus::Memory;
+//! use em6809_core::disasm::disasm_one;
+//!
+//! let mut bus = Memory::new();
+//! bus.load_slice(0x0100, &[0x12]); // NOP
+//! let (len, text) = disasm_one(&mut bus, 0x0100);
+//! assert_eq!(len, 1);
+//! assert_eq!(text, "NOP");
+//! ```
+//!
+//! All disassembler entry points work against any `Bus` impl, so
+//! they automatically follow MMU-translated reads when given an
+//! [`crate::io::IoBus`] over an [`crate::mmu::Mc6829`]-backed memory.
+
 #![allow(clippy::uninlined_format_args)]
 use crate::bus::Bus;
 
